@@ -1,8 +1,8 @@
 """
 hn_fetcher.py
 -------------
-Fetches top stories from the Hacker News API (no auth required).
-This is PulseBoard's Hacker News ingestion layer.
+Fetches top stories from the Hacker News API and upserts them
+into PostgreSQL (raw.hn_stories table).
 
 API docs: https://github.com/HackerNews/API
 
@@ -11,10 +11,19 @@ Usage:
 """
 
 import requests
+import psycopg2
 from datetime import datetime, timezone
 
 # Hacker News API base URL — free, no keys needed
 HN_BASE_URL = "https://hacker-news.firebaseio.com/v0"
+
+# PostgreSQL connection config
+DB_CONFIG = {
+    "dbname": "pulseboard",
+    "user": "nickwyrwas",
+    "host": "localhost",
+    "port": 5432,
+}
 
 
 def fetch_top_story_ids(limit=10):
@@ -26,7 +35,7 @@ def fetch_top_story_ids(limit=10):
     """
     url = f"{HN_BASE_URL}/topstories.json"
     response = requests.get(url)
-    response.raise_for_status()  # Raise an error if the request failed
+    response.raise_for_status()
     story_ids = response.json()
     return story_ids[:limit]
 
@@ -42,11 +51,9 @@ def fetch_story_details(story_id):
     response.raise_for_status()
     item = response.json()
 
-    # Some items can be None (deleted stories), skip those
     if item is None:
         return None
 
-    # Convert Unix timestamp to readable datetime
     created_dt = datetime.fromtimestamp(item.get("time", 0), tz=timezone.utc)
 
     return {
@@ -78,6 +85,44 @@ def fetch_top_stories(limit=10):
     return stories
 
 
+def upsert_stories(stories):
+    """
+    Insert stories into raw.hn_stories, skipping any that already exist.
+
+    Uses INSERT ... ON CONFLICT DO NOTHING to make this idempotent —
+    safe to run multiple times without creating duplicates.
+    """
+    conn = psycopg2.connect(**DB_CONFIG)
+    cur = conn.cursor()
+
+    insert_query = """
+        INSERT INTO raw.hn_stories (story_id, title, score, num_comments, url, author, created_utc, source)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (story_id) DO NOTHING;
+    """
+
+    inserted = 0
+    for story in stories:
+        cur.execute(insert_query, (
+            story["story_id"],
+            story["title"],
+            story["score"],
+            story["num_comments"],
+            story["url"],
+            story["author"],
+            story["created_utc"],
+            story["source"],
+        ))
+        # rowcount is 1 if inserted, 0 if skipped (duplicate)
+        inserted += cur.rowcount
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return inserted
+
+
 if __name__ == "__main__":
     # --- Configuration ---
     STORY_LIMIT = 10
@@ -97,4 +142,7 @@ if __name__ == "__main__":
         print(f"      Author: {story['author']}")
         print(f"      Posted: {story['created_utc']}")
 
-    print(f"\n✅ Successfully fetched {len(stories)} stories!")
+    # Save to database
+    print(f"\nSaving to PostgreSQL...")
+    inserted = upsert_stories(stories)
+    print(f"✅ Done! Inserted {inserted} new stories ({len(stories) - inserted} already existed)")

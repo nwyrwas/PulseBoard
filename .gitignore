@@ -1,0 +1,28 @@
+# Virtual environment
+venv/
+
+# Environment variables (secrets!)
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# dbt (Phase 3)
+.dbt/
+target/
+dbt_packages/
+logs/
+
+# Airflow (Phase 4)
+airflow.db
+airflow.cfg
+webserver_config.py
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: stg_hn_stories
+    columns:
+      - name: story_id
+        tests:
+          - unique
+          - not_null
+      - name: title
+        tests:
+          - not_null
+
+  - name: stg_news_articles
+    columns:
+      - name: article_id
+        tests:
+          - unique
+          - not_null
+      - name: title
+        tests:
+          - not_null

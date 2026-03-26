@@ -215,26 +215,56 @@ Every API key and database credential lives in a `.env` file that is git-ignored
 
 ---
 
-### Phase 5 — FastAPI REST API 🔲
+### Phase 5 — FastAPI REST API ✅
 
-**Planned:** Build a FastAPI app that serves transformed data through REST endpoints.
+**What was built:** A FastAPI REST API that serves pipeline data from PostgreSQL through three endpoints, with CORS middleware for frontend access and auto-generated interactive documentation.
 
-- `GET /trending?hours=24` — top trending topics from `mart_trending_topics`
-- `GET /hn/stories?limit=20` — recent Hacker News stories
-- `GET /news/articles?topic=tech&limit=20` — recent headlines
-- CORS middleware for frontend access
-- psycopg2 connection pooling for efficient database usage
+**Key implementation details:**
+- Three endpoints: `GET /trending`, `GET /hn/stories`, and `GET /news/articles` serving data as JSON
+- `RealDictCursor` from psycopg2 returns rows as dictionaries, which FastAPI auto-converts to JSON responses
+- Parameterized SQL queries with `%s` placeholders to prevent SQL injection — never f-strings in SQL
+- Optional query parameters: `?limit=20` for pagination, `?topic=technology` for filtering articles
+- CORS middleware with `allow_origins=["*"]` enables the Next.js frontend to call the API across ports
+- FastAPI auto-generates interactive Swagger documentation at `/docs`
+
+> **Challenge:** Running `uvicorn main:app` from the project root failed with "Could not import module main."
+>
+> **Solution:** Used the module path syntax `uvicorn api.main:app` so Python could resolve the import from the project root directory.
+
+#### FastAPI Interactive Docs (Swagger UI)
+
+![FastAPI auto-generated Swagger documentation showing all three endpoints](public/images/Phase_5/fastapi_docs.jpg)
+
+#### Trending Topics JSON Response
+
+![GET /trending endpoint returning ranked trending topics as JSON](public/images/Phase_5/json_trending.jpg)
+
+#### Hacker News Stories JSON Response
+
+![GET /hn/stories endpoint returning recent HN stories as JSON](public/images/Phase_5/json_hn_stories.jpg)
 
 ---
 
-### Phase 6 — Next.js Dashboard 🔲
+### Phase 6 — Next.js Dashboard ✅
 
-**Planned:** Build a live dashboard with Next.js 14 and Tailwind CSS that visualizes the pipeline output.
+**What was built:** A live Next.js 14 dashboard with Tailwind CSS that visualizes trending topics, Hacker News stories, and news headlines — auto-refreshing every 60 seconds via SWR.
 
-- TrendingTopics component polling every 60 seconds
-- PostFeed and NewsFeed components for stories and headlines
-- SWR or React Query for data fetching with auto-refresh
-- Dark mode UI with clean, modern design
+**Key implementation details:**
+- Four components: `Navbar`, `TrendingTopics`, `PostFeed`, and `NewsFeed`
+- SWR (`useSWR` hook) handles data fetching with `refreshInterval: 60000` for automatic 60-second polling
+- TrendingTopics displays visual volume bars scaled proportionally to the highest mention count
+- Responsive grid layout: PostFeed and NewsFeed display side-by-side on desktop, stacked on mobile
+- Dark mode UI with `bg-gray-950` base, `bg-gray-800` cards, and `blue-400` accent links
+- All story and article titles are clickable links that open in a new tab
+- Loading and error states handled gracefully for each component
+
+> **Challenge:** The project scaffolded with TypeScript (`.tsx` files) but the component examples used `.js` extensions.
+>
+> **Solution:** Created all components as `.tsx` files to match the project's TypeScript configuration. The JSX code worked identically in both formats.
+
+#### PulseBoard Live Dashboard
+
+![PulseBoard dashboard showing trending topics with volume bars, Hacker News stories, and news headlines](public/images/Phase_6/next.js_dashboard.jpg)
 
 ---
 
@@ -271,8 +301,17 @@ PulseBoard/
 │           └── mart_trending_topics.sql
 ├── dags/
 │   └── pulseBoard_pipeline.py  # Airflow DAG
-├── api/                  # (Phase 5) FastAPI app
-└── dashboard/            # (Phase 6) Next.js frontend
+├── api/
+│   └── main.py               # FastAPI REST API
+├── dashboard/                 # Next.js 14 frontend
+│   └── app/
+│       ├── page.tsx           # Main dashboard page
+│       └── components/
+│           ├── Navbar.tsx
+│           ├── TrendingTopics.tsx
+│           ├── PostFeed.tsx
+│           └── NewsFeed.tsx
+└── public/images/             # Screenshots for documentation
 ```
 
 ---
@@ -282,6 +321,7 @@ PulseBoard/
 ### Prerequisites
 - Python 3.13+
 - PostgreSQL 14+
+- Node.js 18+
 - A free API key from [NewsAPI](https://newsapi.org/register)
 
 ### Setup
@@ -296,7 +336,7 @@ PulseBoard/
    ```bash
    python3.13 -m venv venv
    source venv/bin/activate
-   pip install requests psycopg2-binary python-dotenv dbt-postgres
+   pip install requests psycopg2-binary python-dotenv dbt-postgres fastapi uvicorn
    ```
 
 3. **Create the database and tables**
@@ -348,6 +388,22 @@ PulseBoard/
    ```bash
    psql -d pulseboard -c "SELECT * FROM raw.mart_trending_topics;"
    ```
+
+7. **Start the API**
+   ```bash
+   uvicorn api.main:app --reload --port 8000
+   ```
+
+8. **Start the dashboard** (in a separate terminal)
+   ```bash
+   cd dashboard
+   npm install
+   npm run dev
+   ```
+
+9. **Open the dashboard**
+   - Dashboard: [http://localhost:3000](http://localhost:3000)
+   - API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 

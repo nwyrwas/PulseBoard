@@ -4,15 +4,20 @@ A full-stack data pipeline and live dashboard that ingests stories from Hacker N
 
 ## Tech Stack
 
-| Layer             | Technology                                    |
-|-------------------|-----------------------------------------------|
-| Ingestion         | Python 3.13, requests, python-dotenv          |
-| Storage           | PostgreSQL 14                                 |
-| Transformation    | dbt 1.11 (data build tool)                    |
-| Orchestration     | Apache Airflow                                |
-| API               | FastAPI, psycopg2                             |
-| Frontend          | Next.js 14, Tailwind CSS, SWR                 |
-| Streaming (opt.)  | Apache Kafka via Docker                       |
+| Layer             | Technology                                    | Status |
+|-------------------|-----------------------------------------------|--------|
+| Ingestion         | Python 3.13, requests, python-dotenv          | ✅     |
+| Storage           | PostgreSQL 14                                 | ✅     |
+| Transformation    | dbt 1.11 (data build tool)                    | ✅     |
+| Orchestration     | Apache Airflow                                | ✅     |
+| API               | FastAPI, psycopg2                             | ✅     |
+| Frontend          | Next.js 14, Tailwind CSS, SWR                 | ✅     |
+| Streaming         | Apache Kafka via Docker                       | 🔲     |
+| NLP               | TextBlob / VADER (sentiment analysis)         | 🔲     |
+| Containerization  | Docker Compose                                | 🔲     |
+| CI/CD             | GitHub Actions                                | 🔲     |
+| Authentication    | NextAuth.js                                   | 🔲     |
+| Alerting          | Email (smtplib) / Slack Webhooks              | 🔲     |
 
 ---
 
@@ -268,14 +273,69 @@ Every API key and database credential lives in a `.env` file that is git-ignored
 
 ---
 
-### Phase 7 (Optional) — Kafka Streaming 🔲
+### Phase 7 — Kafka Streaming 🔲
 
 **Planned:** Add real-time streaming as an alternative to scheduled batch processing.
 
 - Local Kafka broker via Docker Compose
-- Producer streaming HN stories to a `pulseBoard.reddit` topic
-- Consumer writing to PostgreSQL in real time
-- Analysis of Kafka vs Airflow scheduling tradeoffs
+- Producer streaming HN stories to a Kafka topic in real time
+- Consumer reading from the topic and writing to PostgreSQL
+- Analysis of Kafka vs Airflow scheduling tradeoffs for this use case
+
+---
+
+### Phase 8 — Sentiment Analysis 🔲
+
+**Planned:** Add NLP-powered sentiment scoring to every story and article in the pipeline.
+
+- Use TextBlob or VADER (free Python NLP libraries) to classify headlines as positive, negative, or neutral
+- Add `sentiment_score` and `sentiment_label` columns to the database
+- Create a new dbt model to aggregate sentiment trends by topic over time
+- Add a Sentiment Trends section to the dashboard with visual indicators
+
+---
+
+### Phase 9 — Docker Compose 🔲
+
+**Planned:** Containerize the entire stack so anyone can run PulseBoard with a single command.
+
+- Dockerfiles for the FastAPI API and Next.js dashboard
+- Docker Compose configuration orchestrating PostgreSQL, API, dashboard, and Airflow
+- Environment variable management via `.env` with Docker secrets
+- Single `docker compose up` to launch the full pipeline
+
+---
+
+### Phase 10 — CI/CD Pipeline 🔲
+
+**Planned:** Automate testing and quality checks on every pull request with GitHub Actions.
+
+- GitHub Actions workflow triggered on PR to `main`
+- Run dbt tests to validate data model integrity
+- Run linting (Python + JavaScript/TypeScript)
+- Prevent merging PRs that break the pipeline
+
+---
+
+### Phase 11 — Authentication 🔲
+
+**Planned:** Add user login to the dashboard with saved preferences and personalized views.
+
+- NextAuth.js integration with GitHub or Google OAuth
+- User-specific dashboard preferences (favorite topics, refresh interval)
+- Protected API routes requiring authentication
+- Session management with secure token handling
+
+---
+
+### Phase 12 — Email & Slack Alerts 🔲
+
+**Planned:** Notify users when a topic spikes in mentions — a real-world pipeline alerting feature.
+
+- Monitor `mart_trending_topics` for sudden spikes in mention count
+- Send email alerts via Python `smtplib` (free, no API key needed)
+- Optional Slack notifications via incoming webhooks
+- Configurable alert thresholds and cooldown periods to prevent alert fatigue
 
 ---
 

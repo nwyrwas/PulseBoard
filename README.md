@@ -471,7 +471,8 @@ PulseBoard/
 
 **Nick Wyrwas**
 - GitHub: [@nwyrwas](https://github.com/nwyrwas)
-
+- Email: nick.wyrwas@outlook.com
+- LinkedIn: linkedin.com/in/nicholas-wyrwas
 ---
 
 ## Project Links

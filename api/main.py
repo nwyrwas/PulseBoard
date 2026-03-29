@@ -8,7 +8,7 @@ app = FastAPI(title="PulseBoard API")
 # CORS middleware — allows the Next.js frontend to call this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # we'll lock this down in production
+    allow_origins=["*"],  
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -22,6 +22,9 @@ def get_connection():
         cursor_factory=RealDictCursor,  # returns rows as dictionaries
     )
 
+# @app.get is a decorator in python. used for wrapping a function with extra behavior without modifying the function itself.
+# @app.get("/trending") tells FastAPI to register the function as a route
+    # and when someone makes a GET Request we run the function and return the result as a JSON response.
 @app.get("/trending")
 def get_trending(hours: int = Query(default=168, description="Hours to look back")):
     conn = get_connection()

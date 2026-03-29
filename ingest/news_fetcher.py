@@ -9,7 +9,9 @@ API docs: https://newsapi.org/docs
 Usage:
     python ingest/news_fetcher.py
 """
-
+# os is going to be used to access the .env file and the environment variables stored in it.
+    # without having to hardcode any API keys or secret variables into the code.
+# hashlib would be used for hashing variables
 import os
 import hashlib
 import requests
@@ -38,6 +40,14 @@ def make_article_id(url):
     The same URL will always produce the same ID, which is what we need
     for our upsert to detect duplicates.
     """
+
+    # used to give each article its own unique ID
+    # url.encode() - converts the URL string into bytes, due to hashlib working with bytes
+    # hashlib.md5 - runs the md5 hashing algorithm on the bytes generated.
+    # .hexdigest() - helps convert the raw hash output into a readable hex string
+
+    # Chose md5 due to it being fast and producing consistent fixed-length output. I would choose something more secure if protecting passwords.
+    
     return hashlib.md5(url.encode()).hexdigest()
 
 
@@ -82,6 +92,10 @@ def fetch_articles(topic, limit=10):
             "title": article.get("title", ""),
             "description": article.get("description", ""),
             "url": article["url"],
+
+            # article.get("source", {}) - gets the source field. If it doesnt exist it returns a empty dictionary
+            # .get("name", "") - would try to get the name of what was retrieved in the previous step. if not present returns an empty string.
+            # Coding it this way if the fields are missing allows us to avoid an unexpected crash if fields are missing.
             "source_name": article.get("source", {}).get("name", ""),
             "published_at": article.get("publishedAt"),
             "topic": topic,

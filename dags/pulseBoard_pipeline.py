@@ -13,9 +13,14 @@ VENV_DBT = f"{PROJECT_DIR}/venv/bin/dbt"
 default_args = {
     "owner": "nick",
     "retries": 1,
+
+    # Timedelta is used to represent duration. So if something fails within Airflow we wait 5 minutes then retry.
     "retry_delay": timedelta(minutes=5),
 }
 
+# Context manager in Python
+    # the with keyword is used when working with something that needs to be 
+    # properly set up and torn down.
 with DAG(
     "pulseBoard_pipeline",              # DAG name (shows up in Airflow UI)
     default_args=default_args,
@@ -43,4 +48,9 @@ with DAG(
     )
 
     # Set the order: each task waits for the previous one
+    # Operator overloading
+        # with airflow it means this task must run before the next task
+        # if one fails the whole chain stops
+
+        # >> - rightshift bitwise operator
     fetch_hn_stories >> fetch_news_articles >> run_dbt_models

@@ -12,7 +12,7 @@ A full-stack data pipeline and live dashboard that ingests stories from Hacker N
 | Orchestration     | Apache Airflow                                | ✅     |
 | API               | FastAPI, psycopg2                             | ✅     |
 | Frontend          | Next.js 14, Tailwind CSS, SWR                 | ✅     |
-| Streaming         | Apache Kafka via Docker                       | 🔲     |
+| Streaming         | Apache Kafka via Docker                       | ✅     |
 | NLP               | TextBlob / VADER (sentiment analysis)         | 🔲     |
 | Containerization  | Docker Compose                                | 🔲     |
 | CI/CD             | GitHub Actions                                | 🔲     |
@@ -57,13 +57,18 @@ Portfolio project demonstrating end-to-end data engineering: API ingestion, rela
 │     API      │     │              │
 └──────┬───────┘     └──────┬───────┘
        │                    │
+       ├────────────────────┤
+       │                    │
        ▼                    ▼
-┌──────────────────────────────────┐
-│         Ingestion Layer          │
-│  hn_fetcher.py  news_fetcher.py  │
-└──────────────┬───────────────────┘
-               │
-               ▼
+┌─────────────────┐  ┌──────────────────────────────────┐
+│  Kafka Streaming │  │       Batch Ingestion Layer       │
+│  (real-time)     │  │  hn_fetcher.py  news_fetcher.py   │
+│  producer →      │  │  (scheduled via Airflow hourly)   │
+│  consumer        │  └──────────────┬───────────────────┘
+└────────┬────────┘                  │
+         │                           │
+         └─────────┬─────────────────┘
+                   ▼
 ┌──────────────────────────────────┐
 │      PostgreSQL (raw schema)     │
 │  hn_stories  │  news_articles    │
@@ -73,12 +78,6 @@ Portfolio project demonstrating end-to-end data engineering: API ingestion, rela
 ┌──────────────────────────────────┐
 │     dbt Transformations          │
 │  staging → marts → trending      │
-└──────────────┬───────────────────┘
-               │
-               ▼
-┌──────────────────────────────────┐
-│    Airflow Orchestration         │
-│  Scheduled hourly DAG            │
 └──────────────┬───────────────────┘
                │
                ▼
@@ -117,6 +116,18 @@ dbt provides dependency management (via `ref()`), built-in testing, and version-
 ### python-dotenv for all secrets management
 
 Every API key and database credential lives in a `.env` file that is git-ignored. The `.env.example` file documents what variables are needed without exposing actual values. This prevents accidental credential exposure in version control.
+
+### Kafka streaming alongside Airflow batch processing (not replacing it)
+
+A common misconception is that streaming replaces batch processing. In practice, most production pipelines use both. Airflow handles reliable, scheduled bulk ingestion — guaranteed to run every hour, with retries and monitoring. Kafka handles real-time event streaming — lower latency, but requires always-on infrastructure (Zookeeper, broker, consumer). PulseBoard implements both so the pipeline can be evaluated under either pattern, and both write to the same PostgreSQL tables using the same upsert logic.
+
+### Confluent Kafka over kafka-python library
+
+Two main Python Kafka libraries exist: `kafka-python` (pure Python) and `confluent-kafka` (C-backed wrapper around librdkafka). We chose `confluent-kafka` because it's significantly faster, actively maintained by Confluent (the company behind Kafka), and is the industry standard for production Kafka workloads. The tradeoff is a C dependency, but on Mac with Homebrew this installs cleanly.
+
+### Docker Compose for local Kafka infrastructure
+
+Kafka requires multiple services (Zookeeper for coordination, the Kafka broker itself). Rather than installing these natively, Docker Compose lets us define the entire infrastructure in a single YAML file and spin it up with one command. This makes the setup reproducible and easy to tear down — `docker-compose up -d` to start, `docker-compose down` to stop.
 
 ---
 
@@ -273,14 +284,50 @@ Every API key and database credential lives in a `.env` file that is git-ignored
 
 ---
 
-### Phase 7 — Kafka Streaming 🔲
+### Phase 7 — Kafka Streaming ✅
 
-**Planned:** Add real-time streaming as an alternative to scheduled batch processing.
+**What was built:** A real-time streaming layer using Apache Kafka as an alternative to Airflow's scheduled batch processing — a Kafka producer streams Hacker News stories to a topic, and a Kafka consumer reads from that topic and writes to PostgreSQL in real time.
 
-- Local Kafka broker via Docker Compose
-- Producer streaming HN stories to a Kafka topic in real time
-- Consumer reading from the topic and writing to PostgreSQL
-- Analysis of Kafka vs Airflow scheduling tradeoffs for this use case
+**Key implementation details:**
+- Local Kafka broker and Zookeeper orchestrated via Docker Compose (`docker-compose.yml`)
+- `confluent-kafka` Python library (C-backed, production-grade) for both producer and consumer
+- Producer fetches top HN stories and publishes each as a JSON message to the `pulseboard.hn_stories` topic
+- Delivery confirmation via callback function — every message is verified as delivered before the script exits
+- `producer.flush()` ensures all queued messages are confirmed delivered before the script exits
+- Consumer uses `group.id` for offset tracking — Kafka remembers what's been read, so no duplicate processing
+- `auto.offset.reset: earliest` ensures the consumer starts from the beginning of the topic on first run
+- Consumer runs in an infinite loop with `consumer.poll(1.0)`, processing messages within 1 second of arrival
+- Same `INSERT ... ON CONFLICT DO NOTHING` upsert logic as the batch fetchers — both paths write to the same table safely
+
+**Batch vs Streaming — when to use each:**
+
+| | Airflow (Batch) | Kafka (Streaming) |
+|---|---|---|
+| **Latency** | Up to 1 hour (scheduled) | Sub-second (real-time) |
+| **Reliability** | Built-in retries, monitoring UI | Requires always-on infrastructure |
+| **Complexity** | Simple — one DAG file | More moving parts (Zookeeper, broker, consumer) |
+| **Best for** | Predictable, periodic data loads | Low-latency, event-driven pipelines |
+| **Infrastructure** | Airflow scheduler only | Docker containers must be running |
+
+> **Challenge:** `docker-compose` command was not found despite Docker being installed — newer Docker versions ship Compose as a plugin (`docker compose`) rather than a standalone binary.
+>
+> **Solution:** Installed `docker-compose` via Homebrew (`brew install docker-compose`) to get the standalone binary. Also discovered Docker Desktop must be actively running (not just installed) for the Docker daemon to accept connections.
+
+> **Challenge:** The Kafka consumer ran but produced no output on the first attempt — the file appeared to be empty when executed.
+>
+> **Solution:** The file hadn't saved properly in the editor. After re-saving with the full consumer code, running the consumer in one terminal while producing in another confirmed real-time message flow — 10 stories produced, 10 consumed and saved to PostgreSQL.
+
+> **Challenge:** The `docker-compose.yml` file had an indentation error — YAML requires consistent spacing for nested properties, and misaligned keys caused a `services.container_name must be a mapping` error.
+>
+> **Solution:** Fixed the indentation so all properties under the `zookeeper` service were properly nested at the same level. YAML is whitespace-sensitive — a lesson in why infrastructure-as-code requires the same attention to detail as application code.
+
+#### Kafka Producer — Streaming Stories to Topic
+
+![Kafka producer fetching 10 HN stories and delivering all to pulseboard.hn_stories topic](public/images/phase-7/kafka-producer.jpg)
+
+#### Kafka Consumer — Real-Time Ingestion to PostgreSQL
+
+![Kafka consumer receiving 10 stories from topic and saving each to PostgreSQL](public/images/phase-7/kafka-consumer.jpg)
 
 ---
 
@@ -347,9 +394,13 @@ PulseBoard/
 ├── .env.example          # Template showing required env vars
 ├── .gitignore
 ├── README.md
+├── docker-compose.yml    # Kafka + Zookeeper local infrastructure
 ├── ingest/
-│   ├── hn_fetcher.py     # Hacker News ingestion script
-│   └── news_fetcher.py   # NewsAPI ingestion script
+│   ├── hn_fetcher.py     # Hacker News batch ingestion script
+│   └── news_fetcher.py   # NewsAPI batch ingestion script
+├── streaming/
+│   ├── kafka_producer.py # Kafka producer — streams HN stories to topic
+│   └── kafka_consumer.py # Kafka consumer — reads topic, writes to PostgreSQL
 ├── pulseBoard/           # dbt project
 │   ├── dbt_project.yml
 │   └── models/
@@ -382,6 +433,7 @@ PulseBoard/
 - Python 3.13+
 - PostgreSQL 14+
 - Node.js 18+
+- Docker Desktop (for Kafka streaming)
 - A free API key from [NewsAPI](https://newsapi.org/register)
 
 ### Setup
@@ -396,7 +448,7 @@ PulseBoard/
    ```bash
    python3.13 -m venv venv
    source venv/bin/activate
-   pip install requests psycopg2-binary python-dotenv dbt-postgres fastapi uvicorn
+   pip install requests psycopg2-binary python-dotenv dbt-postgres fastapi uvicorn confluent-kafka
    ```
 
 3. **Create the database and tables**
@@ -464,6 +516,15 @@ PulseBoard/
 9. **Open the dashboard**
    - Dashboard: [http://localhost:3000](http://localhost:3000)
    - API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+10. **(Optional) Run Kafka streaming** — requires Docker Desktop running
+    ```bash
+    docker-compose up -d
+    # Terminal 1: Start the consumer
+    python streaming/kafka_consumer.py
+    # Terminal 2: Run the producer
+    python streaming/kafka_producer.py
+    ```
 
 ---
 

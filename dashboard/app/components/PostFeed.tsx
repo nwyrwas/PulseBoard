@@ -34,6 +34,7 @@ export default function PostFeed() {
               <span>Score: {story.score}</span>
               <span>Comments: {story.num_comments}</span>
               <span>By: {story.author}</span>
+              <span>Sentiment: {story.sentiment_label}</span>
             </div>
           </div>
         ))}

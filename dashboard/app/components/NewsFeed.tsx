@@ -35,6 +35,9 @@ export default function NewsFeed() {
               <span>
                 Published: {new Date(article.published_at).toLocaleDateString()}
               </span>
+              <span>
+                Sentiment: {article.sentiment_label}
+              </span>
               <span className="capitalize">Topic: {article.topic}</span>
             </div>
           </div>

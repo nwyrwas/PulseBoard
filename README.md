@@ -13,7 +13,7 @@ A full-stack data pipeline and live dashboard that ingests stories from Hacker N
 | API               | FastAPI, psycopg2                             | ✅     |
 | Frontend          | Next.js 14, Tailwind CSS, SWR                 | ✅     |
 | Streaming         | Apache Kafka via Docker                       | ✅     |
-| NLP               | TextBlob / VADER (sentiment analysis)         | 🔲     |
+| NLP               | TextBlob (sentiment analysis)                 | ✅     |
 | Containerization  | Docker Compose                                | 🔲     |
 | CI/CD             | GitHub Actions                                | 🔲     |
 | Authentication    | NextAuth.js                                   | 🔲     |
@@ -331,14 +331,46 @@ Kafka requires multiple services (Zookeeper for coordination, the Kafka broker i
 
 ---
 
-### Phase 8 — Sentiment Analysis 🔲
+### Phase 8 — Sentiment Analysis ✅
 
-**Planned:** Add NLP-powered sentiment scoring to every story and article in the pipeline.
+**What was built:** An NLP sentiment scoring layer using TextBlob that analyzes every headline in the pipeline — both Hacker News stories and NewsAPI articles are scored at ingestion time, stored in PostgreSQL, and displayed on the live dashboard.
 
-- Use TextBlob or VADER (free Python NLP libraries) to classify headlines as positive, negative, or neutral
-- Add `sentiment_score` and `sentiment_label` columns to the database
-- Create a new dbt model to aggregate sentiment trends by topic over time
-- Add a Sentiment Trends section to the dashboard with visual indicators
+**Key implementation details:**
+- `sentiment.py` — a reusable utility that takes any headline string and returns a polarity score (-1.0 to 1.0) and a label (positive, negative, or neutral)
+- TextBlob's `sentiment.polarity` property powers the scoring — positive values mean positive sentiment, negative values mean negative
+- Thresholds: scores above 0.1 are labeled "positive", below -0.1 are "negative", and everything in between is "neutral"
+- Both `hn_fetcher.py` and `news_fetcher.py` call `analyze_sentiment()` on every headline before saving to the database
+- Two new columns added to both database tables: `sentiment_score` (REAL) and `sentiment_label` (TEXT)
+- The dashboard's PostFeed and NewsFeed components display the sentiment label for each item
+- No API changes needed — FastAPI uses `SELECT *`, so the new columns are automatically included in responses
+
+> **Challenge:** Running `from ingest.sentiment import analyze_sentiment` inside the `ingest/` directory failed with a `ModuleNotFoundError` — Python couldn't resolve the package path.
+>
+> **Solution:** Changed to `from sentiment import analyze_sentiment` since both fetchers and the sentiment module live in the same `ingest/` directory. When running from that directory, Python finds sibling modules directly.
+
+> **Challenge:** PostgreSQL wasn't running when testing the updated fetchers — two PostgreSQL versions (14 and 15) were installed, and version 15 was occupying port 5432.
+>
+> **Solution:** Stopped PostgreSQL 15 with `brew services stop postgresql@15`, then started version 14 with `brew services start postgresql@14`. The project uses PostgreSQL 14 throughout.
+
+> **Challenge:** The sentiment scoring code in `news_fetcher.py` was accidentally placed inside the `if not article.get("url"): continue` block, meaning it would only run on articles that were being skipped.
+>
+> **Solution:** Restructured the article-building logic — first build the `article_data` dict, then run sentiment analysis on `article_data["title"]`, then append. This keeps the flow clear: build → score → save.
+
+#### Python Shell — Testing TextBlob Sentiment Scoring
+
+![Python shell testing analyze_sentiment with positive, negative, and neutral headlines](public/images/phase-8/python%20shell%20test.jpg)
+
+#### Hacker News Fetcher — Stories with Sentiment Labels
+
+![hn_fetcher.py output showing 10 stories with sentiment scores and labels](public/images/phase-8/hn_fetcher%20test.jpg)
+
+#### NewsAPI Fetcher — Articles with Sentiment Labels
+
+![news_fetcher.py output showing technology and business articles with sentiment scores](public/images/phase-8/news_fetcher%20test.jpg)
+
+#### Live Dashboard — Sentiment Labels on All Items
+
+![PulseBoard dashboard showing sentiment labels on Hacker News stories and news headlines](public/images/phase-8/dashboard.jpg)
 
 ---
 
@@ -396,6 +428,7 @@ PulseBoard/
 ├── README.md
 ├── docker-compose.yml    # Kafka + Zookeeper local infrastructure
 ├── ingest/
+│   ├── sentiment.py      # TextBlob sentiment scoring utility
 │   ├── hn_fetcher.py     # Hacker News batch ingestion script
 │   └── news_fetcher.py   # NewsAPI batch ingestion script
 ├── streaming/
@@ -448,7 +481,7 @@ PulseBoard/
    ```bash
    python3.13 -m venv venv
    source venv/bin/activate
-   pip install requests psycopg2-binary python-dotenv dbt-postgres fastapi uvicorn confluent-kafka
+   pip install requests psycopg2-binary python-dotenv dbt-postgres fastapi uvicorn confluent-kafka textblob
    ```
 
 3. **Create the database and tables**
@@ -466,6 +499,8 @@ PulseBoard/
        author       TEXT,
        created_utc  TIMESTAMPTZ NOT NULL,
        source       TEXT DEFAULT 'hackernews',
+       sentiment_score REAL,
+       sentiment_label TEXT,
        ingested_at  TIMESTAMPTZ DEFAULT NOW()
    );
 
@@ -477,6 +512,8 @@ PulseBoard/
        source_name  TEXT,
        published_at TIMESTAMPTZ,
        topic        TEXT,
+       sentiment_score REAL,
+       sentiment_label TEXT,
        ingested_at  TIMESTAMPTZ DEFAULT NOW()
    );
    "

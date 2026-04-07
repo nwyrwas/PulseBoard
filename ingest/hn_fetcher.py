@@ -13,6 +13,7 @@ Usage:
 import requests
 import psycopg2
 from datetime import datetime, timezone
+from sentiment import analyze_sentiment
 
 # Hacker News API base URL — free, no keys needed
 HN_BASE_URL = "https://hacker-news.firebaseio.com/v0"
@@ -80,6 +81,9 @@ def fetch_top_stories(limit=10):
     for story_id in story_ids:
         story = fetch_story_details(story_id)
         if story is not None:
+            sentiment = analyze_sentiment(story["title"])
+            story["sentiment_score"] = sentiment["score"]
+            story["sentiment_label"] = sentiment["label"]
             stories.append(story)
 
     return stories
@@ -96,8 +100,8 @@ def upsert_stories(stories):
     cur = conn.cursor()
 
     insert_query = """
-        INSERT INTO raw.hn_stories (story_id, title, score, num_comments, url, author, created_utc, source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO raw.hn_stories (story_id, title, score, num_comments, url, author, created_utc, source, sentiment_score, sentiment_label)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (story_id) DO NOTHING;
     """
 
@@ -112,6 +116,8 @@ def upsert_stories(stories):
             story["author"],
             story["created_utc"],
             story["source"],
+            story["sentiment_score"],
+            story["sentiment_label"],
         ))
         # rowcount is 1 if inserted, 0 if skipped (duplicate)
         inserted += cur.rowcount
@@ -141,6 +147,8 @@ if __name__ == "__main__":
         print(f"      URL: {story['url']}")
         print(f"      Author: {story['author']}")
         print(f"      Posted: {story['created_utc']}")
+        print(f"      Sentiment: {story['sentiment_label']} ({story['sentiment_score']})")
+
 
     # Save to database
     print(f"\nSaving to PostgreSQL...")

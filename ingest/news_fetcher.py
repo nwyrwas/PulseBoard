@@ -15,6 +15,7 @@ import hashlib
 import requests
 import psycopg2
 from dotenv import load_dotenv
+from sentiment import analyze_sentiment
 
 # Load API key from .env
 load_dotenv()
@@ -77,7 +78,7 @@ def fetch_articles(topic, limit=10):
         if not article.get("url"):
             continue
 
-        articles.append({
+        article_data = {
             "article_id": make_article_id(article["url"]),
             "title": article.get("title", ""),
             "description": article.get("description", ""),
@@ -85,7 +86,14 @@ def fetch_articles(topic, limit=10):
             "source_name": article.get("source", {}).get("name", ""),
             "published_at": article.get("publishedAt"),
             "topic": topic,
-        })
+        }
+
+        sentiment = analyze_sentiment(article_data["title"])
+        article_data["sentiment_score"] = sentiment["score"]
+        article_data["sentiment_label"] = sentiment["label"]
+
+        articles.append(article_data)
+
 
     return articles
 
@@ -100,8 +108,8 @@ def upsert_articles(articles):
     cur = conn.cursor()
 
     insert_query = """
-        INSERT INTO raw.news_articles (article_id, title, description, url, source_name, published_at, topic)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO raw.news_articles (article_id, title, description, url, source_name, published_at, topic, sentiment_score, sentiment_label)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (article_id) DO NOTHING;
     """
 
@@ -115,6 +123,8 @@ def upsert_articles(articles):
             article["source_name"],
             article["published_at"],
             article["topic"],
+            article["sentiment_score"],
+            article["sentiment_label"]
         ))
         inserted += cur.rowcount
 
@@ -142,6 +152,7 @@ if __name__ == "__main__":
             print(f"      Source: {article['source_name']}")
             print(f"      URL: {article['url']}")
             print(f"      Published: {article['published_at']}")
+            print(f"      Sentiment: {article['sentiment_label']} ({article['sentiment_score']})")
 
         # Save to database
         inserted = upsert_articles(articles)
